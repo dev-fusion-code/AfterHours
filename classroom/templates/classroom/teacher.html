@@ -1,0 +1,291 @@
+{% extends 'classroom/base.html' %}
+{% load static %}
+
+{% block title %}Instructor Console — Room {{ room.code }}{% endblock %}
+
+{% block nav_tabs %}
+<div class="nav-tabs">
+  <button class="tab-btn active" onclick="switchTab('tab-whiteboard', this)">
+    🎨 Whiteboard & Slides
+  </button>
+  <button class="tab-btn" onclick="switchTab('tab-private-sketches', this)">
+    🔒 Private Sketches <span class="tab-count-badge" id="tab-private-count">0</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('tab-quiz', this)">
+    📊 Quiz & Analytics
+  </button>
+  <button class="tab-btn" onclick="switchTab('tab-roster', this)">
+    👥 Roster & Permissions <span class="tab-count-badge" id="tab-roster-count">0</span>
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; padding-bottom: 0.85rem; border-bottom: 1px solid var(--border-color);">
+  <div>
+    <h1 style="font-size: 1.4rem; font-weight: 800; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;">
+      {{ room.title }}
+      <span class="status-pill status-live">Instructor View</span>
+    </h1>
+    <p style="font-size: 0.85rem; color: var(--text-muted);">Room Code: <strong id="room-code" style="letter-spacing: 0.1em; color: var(--primary);">{{ room.code }}</strong></p>
+  </div>
+  <div style="display: flex; gap: 0.75rem;">
+    <div style="background: var(--surface-white); border: 1px solid var(--border-color); padding: 0.35rem 0.85rem; border-radius: var(--radius-md); text-align: center; box-shadow: var(--shadow-card);">
+      <span style="display: block; font-size: 1.05rem; font-weight: 800; color: var(--text-main);" id="stat-students">0</span>
+      <span style="font-size: 0.68rem; color: var(--text-subtle); text-transform: uppercase; font-weight: 700;">Students</span>
+    </div>
+    <div style="background: var(--surface-white); border: 1px solid var(--border-color); padding: 0.35rem 0.85rem; border-radius: var(--radius-md); text-align: center; box-shadow: var(--shadow-card);">
+      <span style="display: block; font-size: 1.05rem; font-weight: 800; color: var(--success);" id="stat-responses">0</span>
+      <span style="font-size: 0.68rem; color: var(--text-subtle); text-transform: uppercase; font-weight: 700;">Responses</span>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 1: Interactive Whiteboard & PDF Slide Deck & Live Chat -->
+<div id="tab-whiteboard" class="tab-content active">
+  <div class="whiteboard-with-chat-grid">
+    <!-- Left: Canvas & Presentation Deck -->
+    <div class="whiteboard-container">
+      <!-- Presentation Slide Control Header -->
+      <div class="slide-control-bar">
+        <div class="slide-info-group">
+          <span style="font-size: 1.1rem;">📊</span>
+          <span class="slide-title-tag" id="slide-title-display">Lecture Presentation</span>
+          <span class="slide-counter-badge" id="slide-counter-display">Slide 1 of 5</span>
+        </div>
+
+        <div class="slide-nav-group">
+          <button class="btn-slide-nav active" id="btn-mode-pdf" onclick="toggleCanvasMode('pdf')" title="PDF Deck Presentation Mode">📄 PDF</button>
+          <button class="btn-slide-nav" id="btn-mode-blank" onclick="toggleCanvasMode('blank')" title="Blank Whiteboard Mode">🖊 Blank</button>
+          <button class="btn-slide-nav" id="btn-prev-slide" onclick="changeSlide(-1)">◀ Prev</button>
+          <button class="btn-slide-nav" id="btn-next-slide" onclick="changeSlide(1)">Next ▶</button>
+          <label class="btn-slide-nav" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem;">
+            📁 Upload PDF
+            <input type="file" id="pdf-file-input" accept="application/pdf" style="display: none;" onchange="handlePDFUpload(this)">
+          </label>
+        </div>
+      </div>
+
+      <!-- Canvas Area -->
+      <div class="canvas-wrapper">
+        <canvas id="whiteboard-canvas"></canvas>
+        <div id="whiteboard-status-overlay" class="canvas-overlay">📡 Instructor Presentation Canvas</div>
+      </div>
+
+      <!-- Uniform Polished Toolbar -->
+      <div class="whiteboard-toolbar">
+        <div class="tool-group-container">
+          <!-- Drawing Tools -->
+          <div class="tool-group">
+            <button class="tool-btn active" id="tool-pen" onclick="setTool('pen', this)" title="Freehand Pen">✏️ Pen</button>
+            <button class="tool-btn" id="tool-highlighter" onclick="setTool('highlighter', this)" title="Highlighter Marker">🖍️ Highlight</button>
+            <button class="tool-btn" id="tool-laser" onclick="setTool('laser', this)" title="Live Laser Pointer">🔦 Laser Pointer</button>
+            <button class="tool-btn" id="tool-text" onclick="setTool('text', this)" title="Canvas Text">🔤 Text</button>
+            <button class="tool-btn" id="tool-sticky_note" onclick="setTool('sticky_note', this)" title="Sticky Note">📝 Sticky Note</button>
+            <button class="tool-btn" id="tool-eraser" onclick="setTool('eraser', this)" title="Eraser">🧹 Eraser</button>
+          </div>
+
+          <!-- Shape Tools -->
+          <div class="tool-group">
+            <button class="tool-btn" id="tool-line" onclick="setTool('line', this)" title="Straight Line">📏 Line</button>
+            <button class="tool-btn" id="tool-arrow" onclick="setTool('arrow', this)" title="Directional Arrow">🏹 Arrow</button>
+            <button class="tool-btn" id="tool-rectangle" onclick="setTool('rectangle', this)" title="Rectangle">🔲 Rect</button>
+            <button class="tool-btn" id="tool-circle" onclick="setTool('circle', this)" title="Circle">⭕ Circle</button>
+            <button class="tool-btn" id="tool-triangle" onclick="setTool('triangle', this)" title="Triangle">🔺 Triangle</button>
+          </div>
+
+          <!-- Color Swatches & Picker -->
+          <div class="tool-group">
+            <span class="tool-group-label">Color:</span>
+            <div class="color-picker-group">
+              <div class="color-swatch active" style="background: #0f172a;" onclick="setColor('#0f172a', this)"></div>
+              <div class="color-swatch" style="background: #2563eb;" onclick="setColor('#2563eb', this)"></div>
+              <div class="color-swatch" style="background: #16a34a;" onclick="setColor('#16a34a', this)"></div>
+              <div class="color-swatch" style="background: #dc2626;" onclick="setColor('#dc2626', this)"></div>
+              <div class="color-swatch" style="background: #d97706;" onclick="setColor('#d97706', this)"></div>
+              <div class="color-swatch" style="background: #9333ea;" onclick="setColor('#9333ea', this)"></div>
+              <input type="color" class="custom-color-input" id="custom-color-picker" onchange="setColor(this.value, this)" title="Custom Color">
+            </div>
+          </div>
+
+          <!-- Width Size Selector Pills -->
+          <div class="tool-group">
+            <span class="tool-group-label">Size:</span>
+            <div class="width-pill-group">
+              <button class="width-pill" onclick="setWidth(2, this)">2px</button>
+              <button class="width-pill active" onclick="setWidth(5, this)">5px</button>
+              <button class="width-pill" onclick="setWidth(10, this)">10px</button>
+              <button class="width-pill" onclick="setWidth(20, this)">20px</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Canvas Controls (Undo, Clear, Export) -->
+        <div style="display: flex; gap: 0.35rem;">
+          <button onclick="toggleGrid()" class="btn btn-secondary btn-sm" title="Toggle Grid Background">📐 Grid</button>
+          <button onclick="undoStroke()" class="btn btn-secondary btn-sm" title="Undo last stroke">↩️ Undo</button>
+          <button onclick="exportPNG()" class="btn btn-secondary btn-sm" title="Export canvas as PNG image">💾 Export</button>
+          <button onclick="clearWhiteboard()" class="btn btn-danger btn-sm" title="Clear Canvas">🗑️ Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Real-Time Classroom Live Chat Drawer with DMs -->
+    <div class="chat-panel">
+      <div class="chat-header" style="flex-direction: column; align-items: stretch; gap: 0.4rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div class="chat-title">💬 Classroom Chat</div>
+          <span class="status-pill status-live" style="height: 22px; font-size: 0.7rem;">Live</span>
+        </div>
+        <div class="chat-mode-tabs" style="display: flex; gap: 0.25rem; background: var(--surface-subtle); padding: 0.15rem; border-radius: var(--radius-sm);">
+          <button class="chat-mode-btn active" id="chat-tab-public" onclick="switchChatTab('public')" style="flex: 1; border: none; background: var(--surface-white); font-size: 0.75rem; padding: 0.25rem; border-radius: var(--radius-xs); cursor: pointer; font-weight: 600; color: var(--primary);">💬 Public</button>
+          <button class="chat-mode-btn" id="chat-tab-private" onclick="switchChatTab('private')" style="flex: 1; border: none; background: transparent; font-size: 0.75rem; padding: 0.25rem; border-radius: var(--radius-xs); cursor: pointer; font-weight: 500; color: var(--text-muted);">📩 Private DMs</button>
+        </div>
+      </div>
+
+      <div class="chat-messages-box" id="chat-messages-box">
+        <div style="color: var(--text-subtle); font-size: 0.8rem; text-align: center; padding: 1.5rem 0;">
+          Classroom chat started. Messages appear live for all participants!
+        </div>
+      </div>
+
+      <div id="dm-recipient-select-row" class="hidden" style="padding: 0.35rem 0.75rem; background: var(--surface-subtle); border-top: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem;">
+        <span style="color: var(--text-muted); font-weight: 600;">To:</span>
+        <select id="dm-recipient-select" class="form-control" style="font-size: 0.8rem; padding: 0.2rem 0.4rem; height: 28px;">
+          <option value="ALL">All Students (DM Broadcast)</option>
+        </select>
+      </div>
+
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" class="form-control" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+        <button onclick="sendChatMessage()" class="btn btn-primary" style="padding: 0 0.85rem;">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 2: Private Student Sketches (Visible only to Teacher) -->
+<div id="tab-private-sketches" class="tab-content">
+  <div class="panel">
+    <div class="panel-header">
+      <h2 class="panel-title">🔒 Live Student Private Sketches</h2>
+      <p class="panel-subtitle">Students can draw on their private canvas mode to submit confidential work directly to you in real time.</p>
+    </div>
+    <div id="private-sketches-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem; margin-top: 1rem;">
+      <div style="color: var(--text-subtle); font-size: 0.85rem; text-align: center; padding: 2.5rem; grid-column: 1 / -1; background: var(--surface-subtle); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+        No private student sketches submitted yet. When students use <strong>"Private Draw"</strong> mode, their live sketches will render here!
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 3: Quiz & Response Analytics -->
+<div id="tab-quiz" class="tab-content">
+  <div class="grid-2col">
+    <!-- Push Quiz Form -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">📝 Push Question / Live Quiz</h2>
+        <span class="status-pill" id="current-round-badge">Round {{ room.question_round|default:"0" }}</span>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label class="form-label">Question Type</label>
+        <select id="quiz-type-select" onchange="toggleQuizFields()" class="form-control">
+          <option value="SHORT_ANSWER">Short Answer / Numeric</option>
+          <option value="MULTIPLE_CHOICE">Multiple Choice Quiz (A / B / C / D)</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label class="form-label" for="question-text">Question Prompt</label>
+        <textarea id="question-text" rows="3" class="form-control" placeholder="e.g. What is the value of x in 3x + 15 = 45?"></textarea>
+      </div>
+
+      <!-- Multiple Choice Options -->
+      <div id="mc-options-container" class="hidden" style="margin-bottom: 1rem;">
+        <label class="form-label">Quiz Options</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <input type="text" id="opt-A" placeholder="Option A" class="form-control">
+          <input type="text" id="opt-B" placeholder="Option B" class="form-control">
+          <input type="text" id="opt-C" placeholder="Option C" class="form-control">
+          <input type="text" id="opt-D" placeholder="Option D" class="form-control">
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.25rem;">
+        <label class="form-label" for="correct-answer-text">Correct Answer (Optional)</label>
+        <input type="text" id="correct-answer-text" class="form-control" placeholder="e.g. 10 or Option A">
+      </div>
+
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button onclick="pushQuestion()" class="btn btn-primary">
+          Broadcast Quiz
+        </button>
+        <button id="btn-reveal" onclick="revealAnswer()" class="btn btn-success" disabled>
+          Reveal Correct Answer
+        </button>
+        <button id="btn-reset" onclick="resetRound()" class="btn btn-danger" disabled>
+          Reset Round
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Analytics & Clustering -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">🧠 Response Analytics & Misconceptions</h2>
+      </div>
+
+      <!-- Active Question Banner -->
+      <div style="background: var(--surface-subtle); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 1rem;">
+        <p style="font-size: 0.75rem; color: var(--text-subtle); text-transform: uppercase; font-weight: 600;">Active Question</p>
+        <p id="active-question-display" style="font-weight: 600; color: var(--text-main); margin-top: 0.25rem;">No question currently active.</p>
+        <div id="correct-banner" class="hidden" style="margin-top: 0.5rem; color: var(--success); font-weight: 600; font-size: 0.85rem;">
+          ✓ Correct Answer: <span id="correct-val-display">--</span>
+        </div>
+      </div>
+
+      <!-- Cluster Container -->
+      <div id="cluster-container" class="cluster-list">
+        <div style="color: var(--text-subtle); font-size: 0.85rem; text-align: center; padding: 2rem;">
+          Waiting for responses... Answers will automatically cluster here.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 4: Roster & Student Permissions -->
+<div id="tab-roster" class="tab-content">
+  <div class="panel">
+    <div class="panel-header">
+      <h2 class="panel-title">👥 Connected Students & Whiteboard Permissions</h2>
+      <p class="panel-subtitle">Approve students to allow them to write/draw on the live whiteboard in real time.</p>
+    </div>
+
+    <table class="roster-table">
+      <thead>
+        <tr>
+          <th>Student Name</th>
+          <th>Whiteboard Permission</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="roster-table-body">
+        <tr>
+          <td colspan="4" style="text-align: center; color: var(--text-subtle); padding: 2rem;">
+            No students currently connected to room {{ room.code }}.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'classroom/whiteboard.js' %}"></script>
+<script src="{% static 'classroom/teacher.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends 'classroom/base.html' %}
+
+{% block title %}Huddle — Enterprise Classroom Collaboration{% endblock %}
+
+{% block content %}
+<div style="max-width: 900px; margin: 3rem auto;">
+  <div style="text-align: center; margin-bottom: 3rem;">
+    <h1 style="font-size: 2.5rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.75rem;">Interactive Classroom & Real-Time Whiteboard</h1>
+    <p style="font-size: 1.05rem; color: var(--text-secondary); max-width: 620px; margin: 0 auto;">
+      Conduct interactive classes with real-time shared whiteboards, student permission control, and live misconception quiz analytics.
+    </p>
+  </div>
+
+  <div class="grid-2col">
+    <!-- Teacher Portal -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">👨‍🏫 Teacher Portal</h2>
+      </div>
+      <p class="panel-subtitle" style="margin-bottom: 1.25rem;">
+        Launch a live class session with an interactive canvas whiteboard, approve student collaboration, and conduct live quizzes.
+      </p>
+
+      <form action="{% url 'create_room' %}" method="POST">
+        {% csrf_token %}
+        <div style="margin-bottom: 1.25rem;">
+          <label class="form-label" for="title">Session Name</label>
+          <input type="text" id="title" name="title" placeholder="e.g. Physics 101 - Kinematics & Vectors" class="form-control">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">
+          Create Live Room
+        </button>
+      </form>
+    </div>
+
+    <!-- Student Join -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">🎓 Student Join</h2>
+      </div>
+      <p class="panel-subtitle" style="margin-bottom: 1.25rem;">
+        Enter the room code shared by your instructor to join the live whiteboard and respond to quizzes.
+      </p>
+
+      <form action="{% url 'join_room' %}" method="POST">
+        {% csrf_token %}
+        <div style="margin-bottom: 1rem;">
+          <label class="form-label" for="room_code">Room Code</label>
+          <input type="text" id="room_code" name="room_code" placeholder="e.g. HUD84A" required maxlength="10" class="form-control" style="text-transform: uppercase; letter-spacing: 0.15em; font-weight: 700;">
+        </div>
+        <div style="margin-bottom: 1.25rem;">
+          <label class="form-label" for="student_name">Your Full Name</label>
+          <input type="text" id="student_name" name="student_name" placeholder="e.g. Alex Johnson" required class="form-control">
+        </div>
+        <button type="submit" class="btn btn-secondary btn-block">
+          Join Classroom
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

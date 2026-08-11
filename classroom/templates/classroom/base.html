@@ -1,0 +1,63 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Huddle — Interactive Classroom Platform{% endblock %}</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="{% static 'classroom/style.css' %}">
+  <!-- PDF.js Engine for Slide Deck Presentation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="app-navbar">
+    <div class="nav-inner">
+      <a href="{% url 'index' %}" class="brand-group">
+        <div class="brand-mark">H</div>
+        <span class="brand-title">Huddle</span>
+      </a>
+
+      {% block nav_tabs %}{% endblock %}
+
+      <div class="nav-right">
+        {% block nav_status %}
+        <span class="status-pill status-connecting" id="ws-status">
+          <span class="dot"></span> Connecting...
+        </span>
+        {% endblock %}
+      </div>
+    </div>
+  </header>
+
+  <main class="app-container">
+    {% if messages %}
+      <div class="messages-wrapper">
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags }}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="app-footer">
+    <p>Huddle Real-Time Engine &bull; Single-Process InMemoryChannelLayer &bull; Django Channels</p>
+  </footer>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

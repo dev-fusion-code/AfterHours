@@ -1,0 +1,190 @@
+{% extends 'classroom/base.html' %}
+{% load static %}
+
+{% block title %}Student Portal — Room {{ room.code }}{% endblock %}
+
+{% block nav_tabs %}
+<div class="nav-tabs">
+  <button class="tab-btn active" onclick="switchTab('tab-whiteboard', this)">
+    🎨 Live Whiteboard & Slides
+  </button>
+  <button class="tab-btn" onclick="switchTab('tab-quiz', this)">
+    📝 Quiz / Question
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; padding-bottom: 0.85rem; border-bottom: 1px solid var(--border-color);">
+  <div>
+    <h1 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main);">Student: <span style="color: var(--primary);">{{ student_name }}</span></h1>
+    <p style="font-size: 0.85rem; color: var(--text-subtle);">Joined Room Code: <strong id="room-code" style="letter-spacing: 0.1em; color: var(--text-main);">{{ room.code }}</strong></p>
+  </div>
+  <div style="display: flex; gap: 0.5rem; align-items: center;">
+    <span class="status-pill" id="permission-status-pill">
+      🔒 Read-Only Mode
+    </span>
+  </div>
+</div>
+
+<!-- Tab 1: Live Shared Whiteboard & Slides & Chat -->
+<div id="tab-whiteboard" class="tab-content active">
+  <div class="whiteboard-with-chat-grid">
+    <!-- Left: Canvas & Slide Presentation -->
+    <div class="whiteboard-container">
+      <!-- Presentation Slide Control Header -->
+      <div class="slide-control-bar">
+        <div class="slide-info-group">
+          <span style="font-size: 1.1rem;">📊</span>
+          <span class="slide-title-tag" id="slide-title-display">Lecture Presentation</span>
+          <span class="slide-counter-badge" id="slide-counter-display">Slide 1 of 5</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span id="canvas-mode-indicator-badge" class="slide-counter-badge" style="background: var(--surface-subtle); color: var(--text-muted);">📄 Slide Mode</span>
+        </div>
+      </div>
+
+      <!-- Canvas Wrapper -->
+      <div class="canvas-wrapper">
+        <canvas id="whiteboard-canvas"></canvas>
+        <div id="whiteboard-status-overlay" class="canvas-overlay">🔒 Read-Only Mode</div>
+      </div>
+
+      <!-- Student Toolbar -->
+      <div class="whiteboard-toolbar" id="student-toolbar" style="opacity: 0.5; pointer-events: none;">
+        <div class="tool-group-container">
+          <!-- Mode Toggle: Private Draw -->
+          <div class="tool-group">
+            <button class="tool-btn" id="tool-private-toggle" onclick="togglePrivateDraw(this)" title="Private Draw Mode (Only Teacher Sees Your Drawing)">🔒 Private Draw</button>
+          </div>
+
+          <!-- Drawing Tools -->
+          <div class="tool-group">
+            <button class="tool-btn active" id="tool-pen" onclick="setTool('pen', this)" title="Freehand Pen">✏️ Pen</button>
+            <button class="tool-btn" id="tool-highlighter" onclick="setTool('highlighter', this)" title="Highlighter">🖍️ Highlight</button>
+            <button class="tool-btn" id="tool-laser" onclick="setTool('laser', this)" title="Laser Pointer">🔦 Laser</button>
+            <button class="tool-btn" id="tool-text" onclick="setTool('text', this)" title="Canvas Text">🔤 Text</button>
+            <button class="tool-btn" id="tool-sticky_note" onclick="setTool('sticky_note', this)" title="Sticky Note">📝 Sticky</button>
+            <button class="tool-btn" id="tool-eraser" onclick="setTool('eraser', this)" title="Eraser">🧹 Eraser</button>
+          </div>
+
+          <!-- Shape Tools -->
+          <div class="tool-group">
+            <button class="tool-btn" id="tool-line" onclick="setTool('line', this)" title="Line">📏 Line</button>
+            <button class="tool-btn" id="tool-arrow" onclick="setTool('arrow', this)" title="Arrow">🏹 Arrow</button>
+            <button class="tool-btn" id="tool-rectangle" onclick="setTool('rectangle', this)" title="Rectangle">🔲 Rect</button>
+            <button class="tool-btn" id="tool-circle" onclick="setTool('circle', this)" title="Circle">⭕ Circle</button>
+          </div>
+
+          <!-- Color Swatches -->
+          <div class="tool-group">
+            <span class="tool-group-label">Color:</span>
+            <div class="color-picker-group">
+              <div class="color-swatch active" style="background: #0f172a;" onclick="setColor('#0f172a', this)"></div>
+              <div class="color-swatch" style="background: #2563eb;" onclick="setColor('#2563eb', this)"></div>
+              <div class="color-swatch" style="background: #16a34a;" onclick="setColor('#16a34a', this)"></div>
+              <div class="color-swatch" style="background: #dc2626;" onclick="setColor('#dc2626', this)"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.35rem;">
+          <button onclick="exportPNG()" class="btn btn-secondary btn-sm" title="Export canvas image">💾 Export</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Classroom Live Chat Drawer with DM to Teacher -->
+    <div class="chat-panel">
+      <div class="chat-header" style="flex-direction: column; align-items: stretch; gap: 0.4rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div class="chat-title">💬 Live Chat</div>
+          <span class="status-pill status-live" style="height: 22px; font-size: 0.7rem;">Live</span>
+        </div>
+        <div class="chat-mode-tabs" style="display: flex; gap: 0.25rem; background: var(--surface-subtle); padding: 0.15rem; border-radius: var(--radius-sm);">
+          <button class="chat-mode-btn active" id="student-chat-public" onclick="switchStudentChatTab('public')" style="flex: 1; border: none; background: var(--surface-white); font-size: 0.75rem; padding: 0.25rem; border-radius: var(--radius-xs); cursor: pointer; font-weight: 600; color: var(--primary);">💬 Public Chat</button>
+          <button class="chat-mode-btn" id="student-chat-private" onclick="switchStudentChatTab('private')" style="flex: 1; border: none; background: transparent; font-size: 0.75rem; padding: 0.25rem; border-radius: var(--radius-xs); cursor: pointer; font-weight: 500; color: var(--text-muted);">🔒 DM Teacher</button>
+        </div>
+      </div>
+
+      <div class="chat-messages-box" id="chat-messages-box">
+        <div style="color: var(--text-subtle); font-size: 0.8rem; text-align: center; padding: 1.5rem 0;">
+          Welcome to the live chat!
+        </div>
+      </div>
+
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" class="form-control" placeholder="Ask a question or reply..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+        <button onclick="sendChatMessage()" class="btn btn-primary" style="padding: 0 0.85rem;">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 2: Quiz & Question Response -->
+<div id="tab-quiz" class="tab-content">
+  <div style="max-width: 650px; margin: 0 auto;">
+    <div class="panel">
+      <!-- Waiting State -->
+      <div id="state-waiting" style="text-align: center; padding: 2rem 1rem;">
+        <div style="font-size: 2.2rem; margin-bottom: 0.75rem;">📡</div>
+        <h2 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem;">Waiting for Question</h2>
+        <p style="color: var(--text-subtle); font-size: 0.9rem;">Your instructor has not pushed a question or quiz yet. It will appear here live when broadcast!</p>
+      </div>
+
+      <!-- Active State -->
+      <div id="state-active" class="hidden">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-subtle);">
+          <span class="status-pill status-live" id="question-round-badge">Round 1</span>
+          <span style="font-size: 0.75rem; color: var(--success); font-weight: 600; text-transform: uppercase;">Live Question</span>
+        </div>
+
+        <h2 id="question-prompt-text" style="font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin-bottom: 1.5rem;">Question Prompt</h2>
+
+        <!-- Short Answer Input Form -->
+        <div id="form-short-answer">
+          <div style="margin-bottom: 1rem;">
+            <label class="form-label" for="short-answer-input">Your Response</label>
+            <input type="text" id="short-answer-input" placeholder="Type your answer here..." class="form-control" style="font-size: 1rem; padding: 0.75rem;">
+          </div>
+          <button onclick="submitShortAnswer()" class="btn btn-primary btn-block">
+            Submit Answer
+          </button>
+        </div>
+
+        <!-- Multiple Choice Options Grid -->
+        <div id="form-multiple-choice" class="hidden">
+          <div class="quiz-options-grid" id="mc-options-grid">
+            <!-- Dynamic Option Cards populated by student.js -->
+          </div>
+          <button onclick="submitMultipleChoice()" class="btn btn-primary btn-block" style="margin-top: 1.25rem;">
+            Submit Quiz Option
+          </button>
+        </div>
+
+        <!-- Submission Confirmation Banner -->
+        <div id="submission-feedback" class="hidden" style="margin-top: 1.25rem; background: var(--success-light); border: 1px solid #bbf7d0; padding: 0.85rem 1rem; border-radius: var(--radius-md); color: var(--success);">
+          <strong>✓ Submitted: <span id="submitted-val-display">--</span></strong>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">Your response has been sent. You can change and re-submit your answer until the teacher reveals or resets the round.</p>
+        </div>
+
+        <!-- Reveal Result Banner -->
+        <div id="reveal-banner" class="hidden" style="margin-top: 1.5rem; background: var(--surface-subtle); border: 1px solid var(--border-color); padding: 1.25rem; border-radius: var(--radius-md); text-align: center;">
+          <h3 id="reveal-heading" style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;">Answer Revealed</h3>
+          <p style="font-size: 0.95rem; color: var(--success);">Correct Answer: <strong id="reveal-correct-val">--</strong></p>
+          <p style="font-size: 0.85rem; color: var(--text-subtle); margin-top: 0.25rem;">Your Submitted Response: <strong id="reveal-your-val">--</strong></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  window.STUDENT_NAME = "{{ student_name|escapejs }}";
+</script>
+<script src="{% static 'classroom/whiteboard.js' %}"></script>
+<script src="{% static 'classroom/student.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,257 @@
+Good — locking Django + Channels + vanilla JS, no Redis/Celery/Docker. That's fully doable: Django Channels ships with an **in-memory channel layer** that needs zero external services, as long as you run a single server process (which you will, for a hackathon demo). Here's the full plan.
+
+## Tech stack, precisely
+
+- **Django** + **Channels** (`channels` package) — adds WebSocket support to Django via ASGI.
+- **Channel layer: `InMemoryChannelLayer`** — this is the part that replaces Redis. It only works within a single process, but that's exactly your setup (one `runserver`/daphne instance on your laptop). Zero config, zero external service.
+- **ASGI server:** Django's own `runserver` actually supports ASGI/Channels directly in dev mode now — no need for Daphne/uvicorn separately unless you want production-grade serving. For a hackathon demo, `python manage.py runserver` is enough.
+- **Frontend:** vanilla JS using the native browser `WebSocket` API — no Socket.io needed since Channels' consumer protocol is plain WebSocket underneath.
+- **DB:** SQLite (default Django), fine for a hackathon.
+
+No Redis, no Celery, no Docker — confirmed, everything above needs none of them.
+
+## The product: "Huddle" — live problem-solving with misconception clustering
+
+**Core loop:** Teacher creates a room → gets a join code → students join on their devices → teacher pushes a question → students answer live → teacher's screen shows answers clustering into misconception groups in real time, not a raw list.
+
+### Feature set
+
+**Must-build (core, ~6-7h):**
+1. Room creation (teacher) — generates a short room code (e.g. 4-digit).
+2. Room join (student) — enters code + name, connects via WebSocket.
+3. Live roster — teacher sees student tiles appear/update in real time as they join/answer.
+4. Push a question — teacher sends a question (numeric or short-text answer) to all connected students instantly.
+5. Live answer submission — student submits, teacher's screen updates without refresh.
+6. **Misconception clustering (the non-trivial logic)** — group incoming wrong answers by exact/near-match value, show as ranked clusters: *"7 students answered 42 (likely off-by-one), 3 answered 30 (likely used wrong formula)"* — this is your differentiator, not just a tally.
+7. Reveal correct answer + clear round → move to next question.
+
+**Stretch (if time remains, ~1-2h):**
+8. Confidence slider alongside answer ("how sure are you?") — teacher sees a live confidence heatmap grid, not just correct/incorrect.
+9. Session summary at the end — which misconceptions appeared most across the whole session, exportable/visible as a simple report.
+10. Peer-led mode toggle — any student can "become" the presenter, pushing the question instead of only the teacher (fulfills the "or peer-led" part of the theme literally).
+
+## Architecture
+
+**Django apps/structure:**
+```
+huddle/
+  huddle/                  # project settings
+    settings.py            # add 'channels', ASGI_APPLICATION, CHANNEL_LAYERS (in-memory)
+    asgi.py                 # routes HTTP -> Django, WS -> Channels routing
+  classroom/                # app
+    models.py               # Room, Student, Question, Answer
+    consumers.py             # RoomConsumer (the WebSocket handler)
+    routing.py                # ws_urlpatterns
+    views.py                  # normal Django views: create room, join page, teacher dashboard page
+    templates/classroom/
+      teacher.html
+      student.html
+    static/classroom/
+      teacher.js
+      student.js
+      style.css
+```
+
+**`settings.py` key addition (no Redis):**
+```python
+INSTALLED_APPS = [..., 'channels']
+ASGI_APPLICATION = 'huddle.asgi.application'
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer'
+    }
+}
+```
+
+**`asgi.py`:**
+```python
+import os
+from django.core.asgi import get_asgi_application
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'huddle.settings')
+django_asgi_app = get_asgi_application()
+
+from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.auth import AuthMiddlewareStack
+import classroom.routing
+
+application = ProtocolTypeRouter({
+    "http": django_asgi_app,
+    "websocket": AuthMiddlewareStack(
+        URLRouter(classroom.routing.ws_urlpatterns)
+    ),
+})
+```
+
+**`models.py` (minimal, matches feature set):**
+```python
+class Room(models.Model):
+    code = models.CharField(max_length=6, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    active_question = models.TextField(blank=True, null=True)
+    correct_answer = models.CharField(max_length=200, blank=True, null=True)
+
+class Student(models.Model):
+    room = models.ForeignKey(Room, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    channel_name = models.CharField(max_length=200, blank=True)  # for targeted send if needed
+
+class Answer(models.Model):
+    room = models.ForeignKey(Room, on_delete=models.CASCADE)
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    question_round = models.IntegerField(default=0)
+    value = models.CharField(max_length=200)
+    is_correct = models.BooleanField(default=False)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+```
+
+**`consumers.py` — the core real-time logic:**
+```python
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
+from collections import Counter
+
+class RoomConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.room_code = self.scope['url_route']['kwargs']['room_code']
+        self.group_name = f'room_{self.room_code}'
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        event_type = data.get('type')
+
+        if event_type == 'push_question':
+            # teacher pushes a question to everyone in the room
+            await self.channel_layer.group_send(self.group_name, {
+                'type': 'broadcast_question',
+                'question': data['question']
+            })
+
+        elif event_type == 'submit_answer':
+            # student submits — broadcast to teacher for live clustering
+            await self.channel_layer.group_send(self.group_name, {
+                'type': 'broadcast_answer',
+                'student': data['student'],
+                'answer': data['answer']
+            })
+
+    # handlers matching the 'type' fields above
+    async def broadcast_question(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'question', 'question': event['question']
+        }))
+
+    async def broadcast_answer(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'answer', 'student': event['student'], 'answer': event['answer']
+        }))
+```
+
+Note: the **clustering logic itself lives client-side on the teacher's dashboard JS** (simplest, fastest to build and debug) — every time `broadcast_answer` arrives, teacher.js appends it to a running list and re-clusters:
+
+```javascript
+// teacher.js — clustering, the actual "non-trivial logic"
+let answers = [];  // { student, answer }
+
+function addAnswer(student, answer) {
+  answers.push({ student, answer });
+  renderClusters();
+}
+
+function renderClusters() {
+  const counts = {};
+  answers.forEach(a => {
+    counts[a.answer] = (counts[a.answer] || 0) + 1;
+  });
+  // sort clusters by size, descending — biggest misconception first
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  // render each as a cluster card: "X students answered <value>"
+  renderClusterCards(sorted, answers);
+}
+```
+
+**`routing.py`:**
+```python
+from django.urls import re_path
+from . import consumers
+ws_urlpatterns = [
+    re_path(r'ws/room/(?P<room_code>\w+)/$', consumers.RoomConsumer.as_asgi()),
+]
+```
+
+**`teacher.js` connection:**
+```javascript
+const roomCode = document.getElementById('room-code').innerText;
+const socket = new WebSocket(`ws://${window.location.host}/ws/room/${roomCode}/`);
+
+socket.onmessage = function(e) {
+  const data = JSON.parse(e.data);
+  if (data.type === 'answer') addAnswer(data.student, data.answer);
+};
+
+function pushQuestion(questionText) {
+  socket.send(JSON.stringify({ type: 'push_question', question: questionText }));
+}
+```
+
+**`student.js` mirrors this** — connects to the same room-code WebSocket URL, listens for `type: 'question'`, and sends `type: 'submit_answer'` on submit.
+
+## Why in-memory channel layer is safe here (be honest about the limitation)
+
+`InMemoryChannelLayer` only routes messages within a single process. Since your demo is one laptop running `runserver`, both teacher and student browser tabs/devices connect to that *same* process over the network — this works completely fine. The only time you'd need Redis is if you scaled to multiple server processes/machines behind a load balancer, which is irrelevant for a hackathon demo. If a judge asks "why no Redis," the honest answer is: *"Redis-backed channel layers are for horizontal scaling across multiple server processes — for a single-process demo deployment, in-memory is the correct, simpler choice, not a shortcut."* That's a legitimately good engineering answer, not an excuse.
+
+## 9-hour build order
+
+| Time | Task |
+|---|---|
+| 0–1h | Django project + Channels setup, ASGI config, confirm WebSocket echo works between two browser tabs (bare minimum smoke test) |
+| 1–2h | Room model + create/join views, room code generation, teacher/student templates skeleton |
+| 2–3.5h | Consumer: push_question + submit_answer group broadcast, wire up teacher.js/student.js to send/receive |
+| 3.5–5h | Clustering logic + cluster card UI on teacher dashboard, live roster tiles |
+| 5–6h | Reveal answer + next-question round flow, correct/incorrect marking |
+| 6–7h | Stretch: confidence slider + heatmap, or session summary — pick one based on time left |
+| 7–8h | Test on two actual separate laptops/phones over the same WiFi/hotspot, fix connection edge cases |
+| 8–9h | Polish UI, record backup demo video, rehearse |
+
+## Prompt to hand to an AI coding assistant (Claude Code, Cursor, etc.) at the hackathon
+
+```
+I'm building "Huddle" — a real-time collaborative classroom tool for a 9-hour hackathon.
+Stack: Django + Django Channels (WebSockets), vanilla HTML/CSS/JS frontend, SQLite.
+Explicitly NOT using: Redis, Celery, Docker, Socket.io, any JS framework.
+Channel layer: use channels.layers.InMemoryChannelLayer (single-process, no Redis).
+
+Core feature set:
+1. Teacher creates a room, gets a short room code.
+2. Students join via room code + name, connect over WebSocket to /ws/room/<code>/.
+3. Teacher pushes a question (numeric or short-text answer) to all connected students instantly.
+4. Students submit answers live; teacher's dashboard updates without refresh.
+5. Non-trivial logic: cluster incoming answers by matching value, ranked by cluster size,
+   so the teacher sees "7 students answered 42, 3 answered 30" instead of a raw list —
+   this clustering runs client-side in teacher.js as answers arrive over the WebSocket.
+6. Teacher can reveal the correct answer and reset for the next question round.
+
+Please scaffold:
+- Django project structure with a 'classroom' app
+- settings.py changes for Channels + InMemoryChannelLayer
+- asgi.py routing HTTP to Django views and WebSocket to a RoomConsumer
+- models.py: Room, Student, Answer
+- consumers.py: RoomConsumer handling 'push_question' and 'submit_answer' message types,
+  broadcasting to the room's channel group
+- routing.py for the ws_urlpatterns
+- views.py: create room, join room, teacher dashboard, student view
+- Minimal but clean HTML templates (teacher.html, student.html) and vanilla JS
+  (teacher.js, student.js) implementing the WebSocket connection and the
+  answer-clustering render logic described above
+- style.css with a clean, minimal look (no heavy frameworks, no Tailwind needed unless
+  you want to add via CDN link)
+
+Keep everything as simple, readable, and demo-safe as possible — this needs to work
+live on two separate laptops on the same WiFi network during a hackathon demo.
+```
+
+Want me to also write the `views.py` (create/join room logic) and the actual `teacher.html`/`student.html` templates now, so you have a fuller starting point before the event?
