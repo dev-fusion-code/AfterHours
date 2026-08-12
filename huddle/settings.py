@@ -9,6 +9,21 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.onrender.com',
+    'http://*.onrender.com',
+    'http://127.0.0.1',
+    'http://localhost',
+    'https://localhost',
+]
+
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+    CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 INSTALLED_APPS = [
     'daphne',
     'django.contrib.admin',
@@ -76,5 +91,6 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     BASE_DIR / 'classroom' / 'static',
 ]
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
